@@ -1,0 +1,27 @@
+# Datasets (download separately; see README)
+data/
+Ganoderma_UAV_RGB_Dataset_v2/
+
+# Generated external-test sets and run outputs
+v2_external_test*/
+runs/
+v2_results/
+
+# Weights: keep only the final model in models/
+*.pt
+*.onnx
+!models/best.pt
+!models/best.onnx
+
+# Python / notebooks
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+__MACOSX/
+.vscode/
+.idea/

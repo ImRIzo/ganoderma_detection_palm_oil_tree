@@ -1,0 +1,55 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# YOLOv8s-Lite-SE — YOLOv8s-Lite + one LiteSE channel-attention block after SPPF.
+#
+# Backbone width profile : 64 -> 128 -> 256 -> 384 -> 768
+# C2f repeats            : 2 / 4 / 4 / 2 (P2 / P3 / P4 / P5)
+# Neck                   : standard YOLOv8 FPN + PAN
+# Detection heads        : P3 = 192 (stride 8), P4 = 384 (stride 16), P5 = 768 (stride 32)
+# Head                   : standard Detect (nc=1), DFL unchanged
+#
+# Exact channel counts are written explicitly: depth_multiple = width_multiple = 1.0.
+# No custom operators. All modules are standard Ultralytics/torch.nn blocks for a
+# clean ONNX -> QAIRT/QNN export path.
+#
+# Difference vs yolov8s_lite.yaml: ONE LiteSE block (reduction 8) after SPPF.
+# LiteSE ops: GlobalAveragePool, Conv2d 1x1, ReLU, Sigmoid, Mul — all ONNX/QNN-safe.
+
+nc: 1
+depth_multiple: 1.0
+width_multiple: 1.0
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]   # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]  # 1-P2/4
+  - [-1, 2, C2f, [128, True]]   # 2
+  - [-1, 1, Conv, [256, 3, 2]]  # 3-P3/8
+  - [-1, 4, C2f, [256, True]]   # 4
+  - [-1, 1, Conv, [384, 3, 2]]  # 5-P4/16
+  - [-1, 4, C2f, [384, True]]   # 6
+  - [-1, 1, Conv, [768, 3, 2]]  # 7-P5/32
+  - [-1, 2, C2f, [768, True]]   # 8
+  - [-1, 1, SPPF, [768, 5]]     # 9
+  - [-1, 1, LiteSE, [768, 8]]   # 10  channel attention (768 -> 96 -> 768)
+
+head:
+  # top-down FPN
+  - [-1, 1, Conv, [384, 1, 1]]                    # 11  P5: 768 -> 384
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]    # 12  x2
+  - [[-1, 6], 1, Concat, [1]]                     # 13  cat P4: 384 + 384 = 768
+  - [-1, 2, C2f, [384, True]]                     # 14  (P4/16)
+  - [-1, 1, Conv, [192, 1, 1]]                    # 15  384 -> 192
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]    # 16  x2
+  - [[-1, 4], 1, Concat, [1]]                     # 17  cat P3: 192 + 256 = 448
+  - [-1, 2, C2f, [192, True]]                     # 18  (P3/8)
+
+  # bottom-up PAN
+  - [-1, 1, Conv, [192, 3, 2]]                    # 19  P3: 192 -> 192, /2
+  - [[-1, 14], 1, Concat, [1]]                    # 20  cat P4: 192 + 384 = 576
+  - [-1, 2, C2f, [384, True]]                     # 21  (P4/16)
+  - [-1, 1, Conv, [384, 3, 2]]                    # 22  384 -> 384, /2
+  - [[-1, 10], 1, Concat, [1]]                    # 23  cat P5: 384 + 768 = 1152
+  - [-1, 2, C2f, [768, True]]                     # 24  (P5/32)
+
+  - [[18, 21, 24], 1, Detect, [nc]]               # 25  Detect(P3, P4, P5)
